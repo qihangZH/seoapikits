@@ -42,14 +42,17 @@ class SERPAPI:
 
     def tasks_seq_post(self,
                        keyword_list,
-                       res_type: typing.Literal['df', 'raw'] = 'df'
+                       res_type: typing.Literal['df', 'raw'] = 'df',
+                       restrict_chunksize_per_post=100
                        ):
         """
         More details see: https://docs.dataforseo.com/v3/serp/
         :param keyword_list: the keywords list return
-        :param res_type: the result type, normally be 'raw'/'df',
-            raw mean raw json, while df means deduce dataframe, dataframe columns be ['id','keyword']
-        :return: data-frame/ json dict
+        :param res_type: the result type, normally be 'raw'/'df', raw mean raw json,
+            while df means deduce dataframe, dataframe columns be ['id','keyword']
+        :param restrict_chunksize_per_post: see their website of per-time-post detail,
+            default is 100 and SHOULD NOT CHANGE!
+        :return: data-frame/ a list of json dict, each contains info length of restrict_chunksize_per_post
         """
         if not (res_type in ['df', 'raw']):
             raise ValueError('res_type must be df/raw, no other choices')
@@ -63,32 +66,43 @@ class SERPAPI:
             }
             input_keywords.append(request_dic)
 
-        post_res = self.client.post(
-            f"/v3/serp/{self.search_engine}/{self.search_type}/task_post",
-            input_keywords
-        )
-        if post_res["status_code"] == 20000:
+        result_list = []
 
-            if res_type == 'df':
-                res_df = pd.json_normalize(
-                    data=post_res['tasks'],
-                    max_level=1
-                )[['id', 'data.keyword']].rename(columns={'data.keyword': 'keyword'})
+        for kwchunks in [input_keywords[s:s + restrict_chunksize_per_post]
+                         for s in range(0, len(input_keywords), restrict_chunksize_per_post)]:
 
-                if res_df['keyword'].to_list() == keyword_list:
-                    return res_df
+            post_res = self.client.post(
+                f"/v3/serp/{self.search_engine}/{self.search_type}/task_post",
+                kwchunks
+            )
+            if post_res["status_code"] == 20000:
 
-                else:
-                    raise ValueError('Error occurs in Dataframe for wrong keyword correspond')
+                if res_type == 'df':
+                    res_df = pd.json_normalize(
+                        data=post_res['tasks'],
+                        max_level=1
+                    )[['id', 'data.keyword']].rename(columns={'data.keyword': 'keyword'})
 
-            elif res_type == 'raw':
-                return post_res
+                    if res_df['keyword'].to_list() == keyword_list:
+                        result_list.append(res_df)
+
+                    else:
+                        raise ValueError('Error occurs in Dataframe for wrong keyword correspond')
+
+                elif res_type == 'raw':
+                    result_list.append(post_res)
+            else:
+                raise ValueError("error. Code: %d Message: %s" % (post_res["status_code"], post_res["status_message"]))
+
+        """finally we have to concat the result"""
+        if res_type == 'df':
+            return pd.concat(result_list, axis=0).reset_index(drop=True)
         else:
-            raise ValueError("error. Code: %d Message: %s" % (post_res["status_code"], post_res["status_message"]))
+            return result_list
 
     def tasks_seq_ready_df(self,
-                          task_id_listarrser
-                          ):
+                           task_id_listarrser
+                           ):
         """check if the task are already finished"""
         # using this method you can get a list of completed tasks
         # GET /v3/serp/google/organic/tasks_ready
@@ -108,8 +122,6 @@ class SERPAPI:
                 'ready': [tid in ready_ids_list for tid in task_id_list]
             }
         )
-
-
 
     def task_get(self,
                  task_id,
