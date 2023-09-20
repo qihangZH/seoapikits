@@ -83,11 +83,11 @@ class SERPAPI:
                         max_level=1
                     )[['id', 'data.keyword']].rename(columns={'data.keyword': 'keyword'})
 
-                    if res_df['keyword'].to_list() == keyword_list:
+                    if res_df['keyword'].to_list() == kwchunks:
                         result_list.append(res_df)
 
                     else:
-                        raise ValueError('Error occurs in Dataframe for wrong keyword correspond')
+                        raise ValueError('Error occurs in Dataframe for wrong keyword response')
 
                 elif res_type == 'raw':
                     result_list.append(post_res)
