@@ -86,6 +86,31 @@ class SERPAPI:
         else:
             raise ValueError("error. Code: %d Message: %s" % (post_res["status_code"], post_res["status_message"]))
 
+    def tasks_seq_ready_df(self,
+                          task_id_listarrser
+                          ):
+        """check if the task are already finished"""
+        # using this method you can get a list of completed tasks
+        # GET /v3/serp/google/organic/tasks_ready
+        # in addition to 'google' and 'organic' you can also set other search engine and type parameters
+        # the full list of possible parameters is available in documentation
+        # you can find the full list of the response codes here https://docs.dataforseo.com/v3/appendix/errors
+
+        get_res = self.client.get(f"/v3/serp/{self.search_engine}/{self.search_type}/tasks_ready")
+
+        ready_ids_list = pd.DataFrame(get_res["tasks"][0]["result"]).copy()['id'].to_list()
+
+        task_id_list = pd.Series(task_id_listarrser).to_list()
+
+        return pd.DataFrame(
+            {
+                'id': task_id_list,
+                'ready': [tid in ready_ids_list for tid in task_id_list]
+            }
+        )
+
+
+
     def task_get(self,
                  task_id,
                  res_type: typing.Literal['df', 'raw'] = 'df',
@@ -140,21 +165,38 @@ class SERPAPI:
         else:
             return get_res
 
-    def tasks_seq_get_df(self, task_id_listarrser, timeout_limit=0, retry_freq=5):
+    def tasks_seq_get_df(self, task_id_listarrser, timeout_limit=0, retry_freq=5,
+                         errors: typing.Literal['strict', 'ignore'] = 'strict'):
         """
         :param task_id_listarrser: the task id list, If meets the problems of No-return, then auto-rerun
         :param timeout_limit: default 0(seconds), the time limit to retry for request the data from server
         :param retry_freq: the frequency(seconds) to try again from seo server
+        :param errors: the actions to deal with errors, default 'strict', 'ignore' means pass and leave NaN
         :return: data-frame ONLY
         """
         res_df_list = []
+
         for taskid in tqdm.tqdm(task_id_listarrser):
-            res_df_list.append(
-                self.task_get(
+
+            try:
+                tmp_df = self.task_get(
                     task_id=taskid,
                     res_type='df',
                     timeout_limit=timeout_limit,
                     retry_freq=retry_freq
                 )
+            except Exception as e:
+                if errors == 'strict':
+                    raise ConnectionError(e)
+                elif errors == 'ignore':
+                    print(e)
+                    print('\nthe problem was ignored and pass to next id get')
+                    tmp_df = pd.DataFrame({'id': [taskid]})
+                else:
+                    raise ValueError('errors must in argument choices.')
+
+            res_df_list.append(
+                tmp_df
             )
+
         return pd.concat(res_df_list, axis=0).reset_index(drop=True)
