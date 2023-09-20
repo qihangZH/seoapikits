@@ -83,7 +83,7 @@ class SERPAPI:
                         max_level=1
                     )[['id', 'data.keyword']].rename(columns={'data.keyword': 'keyword'})
 
-                    if res_df['keyword'].to_list() == kwchunks:
+                    if set(res_df['keyword'].to_list()) == set([tmpd['keyword'] for tmpd in kwchunks]):
                         result_list.append(res_df)
 
                     else:
